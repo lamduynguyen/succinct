@@ -1,124 +1,99 @@
 #pragma once
 
-#include <vector>
 #include <algorithm>
-
-#include <boost/utility.hpp>
-#include <boost/range.hpp>
-#include <boost/function.hpp>
-#include <boost/lambda/bind.hpp>
-#include <boost/lambda/construct.hpp>
-
-#include <stdint.h>
+#include <cassert>
+#include <cstdint>
+#include <functional>
+#include <vector>
 
 #include "intrinsics.hpp"
 
-namespace succinct { namespace mapper {
+namespace succinct {
+namespace mapper {
 
-    namespace detail {
-        class freeze_visitor;
-        class map_visitor;
-        class sizeof_visitor;
+namespace detail {
+class freeze_visitor;
+class map_visitor;
+class sizeof_visitor;
+}  // namespace detail
+
+template <typename T>  // T must be a POD
+class mappable_vector {
+ public:
+  typedef T value_type;
+  typedef const T *iterator;
+  typedef const T *const_iterator;
+
+  mappable_vector() : m_data(0), m_size(0), m_deleter() {}
+
+  mappable_vector(const mappable_vector &)            = delete;
+  mappable_vector &operator=(const mappable_vector &) = delete;
+
+  template <typename Range>
+  mappable_vector(Range const &from) : m_data(0), m_size(0) {
+    size_t size = std::ranges::size(from);
+    T *data     = new T[size];
+    m_deleter   = [data]() { delete[] data; };
+
+    std::copy(std::begin(from), std::end(from), data);
+    m_data = data;
+    m_size = size;
+  }
+
+  ~mappable_vector() {
+    if (m_deleter) { m_deleter(); }
+  }
+
+  void swap(mappable_vector &other) {
+    using std::swap;
+    swap(m_data, other.m_data);
+    swap(m_size, other.m_size);
+    swap(m_deleter, other.m_deleter);
+  }
+
+  void clear() { mappable_vector().swap(*this); }
+
+  void steal(std::vector<T> &vec) {
+    clear();
+    m_size = vec.size();
+    if (m_size) {
+      std::vector<T> *new_vec = new std::vector<T>;
+      new_vec->swap(vec);
+      m_deleter = [new_vec]() { delete new_vec; };
+      m_data    = new_vec->data();
     }
+  }
 
-    typedef boost::function<void()> deleter_t;
+  template <typename Range>
+  void assign(Range const &from) {
+    clear();
+    mappable_vector(from).swap(*this);
+  }
 
-    template <typename T> // T must be a POD
-    class mappable_vector : boost::noncopyable {
-    public:
-        typedef T value_type;
-        typedef const T* iterator;
-        typedef const T* const_iterator;
+  uint64_t size() const { return m_size; }
 
-        mappable_vector()
-            : m_data(0)
-            , m_size(0)
-            , m_deleter()
-        {}
+  inline const_iterator begin() const { return m_data; }
 
-        template <typename Range>
-        mappable_vector(Range const& from)
-            : m_data(0)
-            , m_size(0)
-        {
-            size_t size = boost::size(from);
-            T* data = new T[size];
-            m_deleter = boost::lambda::bind(boost::lambda::delete_array(), data);
+  inline const_iterator end() const { return m_data + m_size; }
 
-            std::copy(boost::begin(from),
-                      boost::end(from),
-                      data);
-            m_data = data;
-            m_size = size;
-        }
+  inline T const &operator[](uint64_t i) const {
+    assert(i < m_size);
+    return m_data[i];
+  }
 
-        ~mappable_vector() {
-            if (m_deleter) {
-                m_deleter();
-            }
-        }
+  inline T const *data() const { return m_data; }
 
-        void swap(mappable_vector& other) {
-            using std::swap;
-            swap(m_data, other.m_data);
-            swap(m_size, other.m_size);
-            swap(m_deleter, other.m_deleter);
-        }
+  inline void prefetch(size_t i) const { succinct::intrinsics::prefetch(m_data + i); }
 
-        void clear() {
-            mappable_vector().swap(*this);
-        }
+  friend class detail::freeze_visitor;
+  friend class detail::map_visitor;
+  friend class detail::sizeof_visitor;
 
-        void steal(std::vector<T>& vec) {
-            clear();
-            m_size = vec.size();
-            if (m_size) {
-                std::vector<T>* new_vec = new std::vector<T>;
-                new_vec->swap(vec);
-                m_deleter = boost::lambda::bind(boost::lambda::delete_ptr(), new_vec);
-                m_data = &(*new_vec)[0];
-            }
-        }
+ protected:
+  const T *m_data;
+  uint64_t m_size;
+  std::function<void()> m_deleter;
+};
 
-        template <typename Range>
-        void assign(Range const& from) {
-            clear();
-            mappable_vector(from).swap(*this);
-        }
-
-        uint64_t size() const {
-            return m_size;
-        }
-
-        inline const_iterator begin() const {
-            return m_data;
-        }
-
-        inline const_iterator end() const {
-            return m_data + m_size;
-        }
-
-        inline T const& operator[](uint64_t i) const {
-            assert(i < m_size);
-            return m_data[i];
-        }
-
-        inline T const* data() const {
-            return m_data;
-        }
-
-        inline void prefetch(size_t i) const {
-            succinct::intrinsics::prefetch(m_data + i);
-        }
-
-        friend class detail::freeze_visitor;
-        friend class detail::map_visitor;
-        friend class detail::sizeof_visitor;
-
-    protected:
-        const T* m_data;
-        uint64_t m_size;
-        deleter_t m_deleter;
-    };
-
-}}
+}  // namespace mapper
+}  // namespace succinct

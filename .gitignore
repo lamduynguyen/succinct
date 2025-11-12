@@ -22,4 +22,4 @@ CMakeCache.txt
 Testing/
 CMakeFiles/
 succinct_config.hpp
-
+build/
