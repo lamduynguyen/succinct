@@ -37,7 +37,8 @@ set(SUCCINCT_SOURCES rs_bit_vector.cpp bp_vector.cpp)
 
 add_library(succinct STATIC ${SUCCINCT_SOURCES})
 
-add_subdirectory(perftest)
+# TODO: Temporarily disable perftest -- needs more work to deprecate boost here
+# add_subdirectory(perftest)
 
 # make and run tests only if library is compiled stand-alone
 if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)

@@ -3,8 +3,7 @@
 #include <algorithm>
 #include <limits>
 #include <vector>
-
-#include <boost/range.hpp>
+#include <ranges>
 
 #include "rs_bit_vector.hpp"
 
