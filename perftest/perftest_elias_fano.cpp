@@ -4,6 +4,7 @@
 #include <random>
 #include <string>
 #include <tuple>
+#include <unordered_set>
 #include <vector>
 
 #include "elias_fano.hpp"
@@ -78,6 +79,117 @@ void ef_enumeration_benchmark(uint64_t m, uint8_t bits) {
   std::cerr << "Elapsed: " << elapsed / 1000 << " msec\n" << double(m) / elapsed << " Mcodes/s" << std::endl;
 }
 
+void hashtable_enumeration_benchmark(uint64_t m, uint8_t bits) {
+  monotone_generator mgen(m, bits, 37);
+
+  std::unordered_set<uint64_t> ht;
+  ht.reserve(m);
+
+  for (size_t i = 0; i < m; ++i) { ht.insert(mgen.next()); }
+  assert(mgen.done());
+
+  double elapsed;
+  uint64_t foo = 0;
+
+  SUCCINCT_TIMEIT(elapsed) {
+    for (const auto &v : ht) { foo ^= v; }
+  }
+
+  volatile uint64_t vfoo = foo;
+  (void)vfoo;
+
+  std::cerr << "Hashtable elapsed: " << elapsed / 1000 << " msec\n" << double(m) / elapsed << " Mcodes/s" << std::endl;
+}
+
+void ef_construction_benchmark(uint64_t m, uint8_t bits) {
+  monotone_generator mgen(m, bits, 37);
+
+  double elapsed;
+
+  SUCCINCT_TIMEIT(elapsed) {
+    succinct::elias_fano::elias_fano_builder bvb(uint64_t(1) << bits, m);
+    for (size_t i = 0; i < m; ++i) { bvb.push_back(mgen.next()); }
+    succinct::elias_fano ef(&bvb);
+  }
+
+  std::cerr << "EF construction elapsed: " << elapsed / 1000 << " msec" << std::endl;
+}
+
+void hashtable_construction_benchmark(uint64_t m, uint8_t bits) {
+  monotone_generator mgen(m, bits, 37);
+
+  double elapsed;
+
+  SUCCINCT_TIMEIT(elapsed) {
+    std::unordered_set<uint64_t> ht;
+    ht.reserve(m);
+    for (size_t i = 0; i < m; ++i) { ht.insert(mgen.next()); }
+  }
+
+  std::cerr << "Hashtable construction elapsed: " << elapsed / 1000 << " msec" << std::endl;
+}
+
+std::vector<uint64_t> make_random_indices(uint64_t m, size_t num, unsigned seed = 123) {
+  std::mt19937_64 gen(seed);
+  std::uniform_int_distribution<uint64_t> dist(0, m - 1);
+
+  std::vector<uint64_t> idx(num);
+  for (size_t i = 0; i < num; ++i) { idx[i] = dist(gen); }
+  return idx;
+}
+
+void ef_random_access_benchmark(uint64_t m, uint8_t bits, size_t num_queries) {
+  succinct::elias_fano::elias_fano_builder bvb(uint64_t(1) << bits, m);
+  monotone_generator mgen(m, bits, 37);
+
+  std::vector<uint64_t> values(m);
+  for (size_t i = 0; i < m; ++i) {
+    values[i] = mgen.next();
+    bvb.push_back(values[i]);
+  }
+  succinct::elias_fano ef(&bvb);
+
+  double elapsed;
+  uint64_t foo = 0;
+  auto queries = make_random_indices(m, num_queries);
+  SUCCINCT_TIMEIT(elapsed) {
+    for (auto q : queries) { foo ^= ef.select(q); }
+  }
+  volatile uint64_t vfoo = foo;
+  (void)vfoo;
+  std::cerr << "EF random access elapsed: " << elapsed / 1000 << " msec\n"
+            << double(num_queries) / elapsed << " Mops/s" << std::endl;
+}
+
+void hashtable_random_access_benchmark(uint64_t m, uint8_t bits, size_t num_queries) {
+  monotone_generator mgen(m, bits, 37);
+
+  std::vector<uint64_t> values(m);
+  std::unordered_set<uint64_t> ht;
+  ht.reserve(m);
+
+  for (size_t i = 0; i < m; ++i) {
+    values[i] = mgen.next();
+    ht.insert(values[i]);
+  }
+
+  double elapsed;
+  uint64_t foo = 0;
+  auto queries = make_random_indices(m, num_queries);
+  SUCCINCT_TIMEIT(elapsed) {
+    for (auto q : queries) {
+      auto it = ht.find(values[q]);
+      if (it != ht.end()) foo ^= *it;
+    }
+  }
+
+  volatile uint64_t vfoo = foo;
+  (void)vfoo;
+
+  std::cerr << "Hashtable random access elapsed: " << elapsed / 1000 << " msec\n"
+            << double(num_queries) / elapsed << " Mops/s" << std::endl;
+}
+
 int main(int argc, char **argv) {
   if (argc != 3) {
     std::cerr << "Usage: " << argv[0] << " <m> <bits>\n";
@@ -87,5 +199,15 @@ int main(int argc, char **argv) {
   uint64_t m   = std::stoull(argv[1]);
   uint8_t bits = static_cast<uint8_t>(std::stoi(argv[2]));
 
+  std::cerr << "=== Construction ===\n";
+  ef_construction_benchmark(m, bits);
+  hashtable_construction_benchmark(m, bits);
+
+  std::cerr << "\n=== Scan ===\n";
   ef_enumeration_benchmark(m, bits);
+  hashtable_enumeration_benchmark(m, bits);
+
+  std::cerr << "\n=== Random access ===\n";
+  ef_random_access_benchmark(m, bits, m);
+  hashtable_random_access_benchmark(m, bits, m);
 }

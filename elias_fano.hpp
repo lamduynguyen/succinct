@@ -5,11 +5,31 @@
 
 namespace succinct {
 
+/**
+ * @brief List of APIs and meaning:
+ *
+ * - Position based
+ * select(uint64_t n)	      Returns the n-th number in the sequence (0-based).
+ * delta(uint64_t n)		    Returns select(n) - select(n-1) (gap between consecutive elements). Useful in gap encoding.
+ * select_range(uint64_t n)	Returns (select(n), select(n+1)). Another form of delta but gives explicit values.
+ *
+ * - Value-based, i.e., take key as the input
+ * rank(uint64_t key)	    Tells how many elements are ≤ the given integer.
+ * predecessor1(uint64_t key)	Finds the predecessor of a given integer.
+ * successor1(uint64_t key)	  Finds the successor of a given integer.
+ * operator[](uint64_t key)	  Checks if a given value exists in the current container?
+ */
 class elias_fano {
  public:
   elias_fano() = default;
 
   struct elias_fano_builder {
+    /**
+     * @brief Construct a new elias fano builder object
+     *
+     * @param n : max universe, i.e., maximum value
+     * @param m : number of elements
+     */
     elias_fano_builder(uint64_t n, uint64_t m)
         : m_n(n),
           m_m(m),
@@ -87,7 +107,7 @@ class elias_fano {
   inline uint64_t num_ones() const { return m_high_bits_d1.num_positions(); }
 
   inline bool operator[](uint64_t pos) const {
-    assert(pos < size());
+    assert(pos <= size());
     assert(m_high_bits_d0.num_positions());  // needs rank index
     uint64_t h_rank = pos >> m_l;
     uint64_t h_pos  = m_high_bits_d0.select(m_high_bits, h_rank);
@@ -115,14 +135,13 @@ class elias_fano {
   inline uint64_t rank(uint64_t pos) const {
     assert(pos <= m_size);
     assert(m_high_bits_d0.num_positions());  // needs rank index
-    if (pos == size()) { return num_ones(); }
 
     uint64_t h_rank = pos >> m_l;
     uint64_t h_pos  = m_high_bits_d0.select(m_high_bits, h_rank);
     uint64_t rank   = h_pos - h_rank;
     uint64_t l_pos  = pos & ((1ULL << m_l) - 1);
 
-    while (h_pos > 0 && m_high_bits[h_pos - 1] && m_low_bits.get_bits((rank - 1) * m_l, m_l) >= l_pos) {
+    while (rank > 0 && h_pos > 0 && m_high_bits[h_pos - 1] && m_low_bits.get_bits((rank - 1) * m_l, m_l) >= l_pos) {
       --rank;
       --h_pos;
     }

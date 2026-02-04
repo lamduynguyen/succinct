@@ -1,7 +1,17 @@
 cmake_minimum_required(VERSION 3.20)
 project(SUCCINCT)
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 20) # Compile as C++20.
+set(CMAKE_CXX_STANDARD_REQUIRED ON) # Require C++20 support.
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
+set(CMAKE_CXX_FLAGS "${CMAKE_C_FLAGS} -fPIC -Wno-stringop-overflow -fasynchronous-unwind-tables")
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DDEBUG -O0 -g")
+set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
+
+if(NOT CMAKE_BUILD_TYPE)
+  message(STATUS "Setting build type to `Debug` as none was specified.")
+  set(CMAKE_BUILD_TYPE "Debug")
+endif()
 
 option(SUCCINCT_USE_LIBCXX "Use libc++ with Clang instead of libstdc++" OFF)
 option(SUCCINCT_USE_INTRINSICS
@@ -37,16 +47,14 @@ set(SUCCINCT_SOURCES rs_bit_vector.cpp bp_vector.cpp)
 
 add_library(succinct STATIC ${SUCCINCT_SOURCES})
 
-# TODO: Temporarily disable perftest -- needs more work to deprecate boost here
-# add_subdirectory(perftest)
+add_subdirectory(perftest)
 
 # make and run tests only if library is compiled stand-alone
 if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME)
   find_package(GTest REQUIRED)
   enable_testing()
   file(GLOB SUCCINCT_TEST_SOURCES test_*.cpp)
-  list(FILTER SUCCINCT_TEST_SOURCES EXCLUDE REGEX "test_main\\.cpp"
-  )# Remove test_main.cpp from the list
+  list(FILTER SUCCINCT_TEST_SOURCES EXCLUDE REGEX "test_main\\.cpp")
   foreach(TEST_SRC ${SUCCINCT_TEST_SOURCES})
     get_filename_component(TEST_SRC_NAME ${TEST_SRC} NAME_WE)
     add_executable(${TEST_SRC_NAME} ${TEST_SRC} test_main.cpp)

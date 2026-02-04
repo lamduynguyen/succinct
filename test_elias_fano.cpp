@@ -62,3 +62,33 @@ TEST(test_elias_fano, basic) {
     test_select_enumeration(v, bitmap);
   }
 }
+
+TEST(test_elias_fano, streaming) {
+  srand(42);
+  size_t N = 10000;
+  std::vector<uint64_t> v;
+  for (size_t i = 0; i < N; ++i) { v.push_back(rand()); }
+  std::sort(v.begin(), v.end());
+  v.erase(std::unique( v.begin(), v.end() ), v.end());
+
+
+  // streaming input
+  succinct::elias_fano::elias_fano_builder build(*std::max_element(v.begin(), v.end()), v.size());
+  for (size_t i = 0; i < v.size(); ++i) { build.push_back(v[i]); }
+  succinct::elias_fano ef(&build);
+
+  // evaluate output
+  for (auto idx = 0UL; idx < v.size(); idx++) {
+    auto &val = v[idx];
+    ASSERT_EQ(ef.rank(val), idx);
+    ASSERT_EQ(ef.select(idx), val);
+    if (idx < v.size() - 1 ) {
+      auto [first, second] = ef.select_range(idx);
+      ASSERT_EQ(first, val);
+      ASSERT_EQ(second, v[idx + 1]);
+      ASSERT_EQ(ef.successor1(val + 1), second);
+      ASSERT_EQ(ef.predecessor1(v[idx + 1] - 1), first);
+    }
+    ASSERT_TRUE(ef[val]);
+  }
+}
