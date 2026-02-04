@@ -1,10 +1,10 @@
 #pragma once
 
+#include <cstdint>
 #include <fstream>
 #include <list>
 #include <stdexcept>
 #include <string>
-#include <cstdint>
 
 namespace succinct {
 namespace util {

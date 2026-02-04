@@ -2,8 +2,8 @@
 
 #include <algorithm>
 #include <limits>
-#include <vector>
 #include <ranges>
+#include <vector>
 
 #include "rs_bit_vector.hpp"
 

@@ -34,6 +34,11 @@ struct elias_fano_compressed_list {
     bit_vector(&bits_builder).swap(m_bits);
   }
 
+  elias_fano_compressed_list(elias_fano::elias_fano_builder &ef_builder, bit_vector_builder &bits_builder) {
+    elias_fano(&ef_builder, false).swap(m_ef);
+    bit_vector(&bits_builder).swap(m_bits);
+  }
+
   value_type operator[](size_t idx) const {
     std::pair<size_t, size_t> r = m_ef.select_range(idx);
     size_t l                    = r.second - r.first;

@@ -1,71 +1,67 @@
 #pragma once
 
 #include <algorithm>
+#include <cassert>
+#include <tuple>
 #include <vector>
-
-#include <boost/tuple/tuple.hpp>
-#include <boost/tuple/tuple_comparison.hpp>
 
 #include "cartesian_tree.hpp"
 
 namespace succinct {
 
-// XXX(ot): implement arbitrary comparator
+// XXX: currently uses default comparator; arbitrary comparator support can be added
 template <typename Vector>
-class topk_vector : boost::noncopyable {
+class topk_vector {
  public:
-  typedef Vector vector_type;
-  typedef typename vector_type::value_type value_type;
-  typedef boost::tuple<value_type, uint64_t> entry_type;
-  typedef std::vector<entry_type> entry_vector_type;
+  using vector_type       = Vector;
+  using value_type        = typename vector_type::value_type;
+  using entry_type        = std::tuple<value_type, uint64_t>;  // value + index
+  using entry_vector_type = std::vector<entry_type>;
 
-  topk_vector() {}
+  topk_vector() = default;
 
   template <typename Range>
-  topk_vector(Range const &v) {
-    cartesian_tree(v, std::greater<typename boost::range_value<Range>::type>()).swap(m_cartesian_tree);
+  topk_vector(const Range &v) {
+    cartesian_tree(v, std::greater<typename Range::value_type>()).swap(m_cartesian_tree);
     vector_type(v).swap(m_v);
   }
 
-  value_type const operator[](uint64_t idx) const { return m_v[idx]; }
+  value_type operator[](uint64_t idx) const { return m_v[idx]; }
 
   uint64_t size() const { return m_v.size(); }
 
   class enumerator {
    public:
-    enumerator() : m_topkv(0) {}
+    enumerator() : m_topkv(nullptr) {}
 
     bool next() {
-      using boost::tie;
       if (m_q.empty()) return false;
 
       value_type cur_mid_val;
       uint64_t cur_mid, cur_a, cur_b;
 
       std::pop_heap(m_q.begin(), m_q.end(), value_index_comparator());
-      tie(cur_mid_val, cur_mid, cur_a, cur_b) = m_q.back();
+      std::tie(cur_mid_val, cur_mid, cur_a, cur_b) = m_q.back();
       m_q.pop_back();
 
-      m_cur = entry_type(cur_mid_val, cur_mid);
+      m_cur = std::make_tuple(cur_mid_val, cur_mid);
 
       if (cur_mid != cur_a) {
         uint64_t m = m_topkv->m_cartesian_tree.rmq(cur_a, cur_mid - 1);
-        m_q.push_back(queue_element_type(m_topkv->m_v[m], m, cur_a, cur_mid - 1));
+        m_q.push_back(queue_element_type{m_topkv->m_v[m], m, cur_a, cur_mid - 1});
         std::push_heap(m_q.begin(), m_q.end(), value_index_comparator());
       }
 
       if (cur_mid != cur_b) {
         uint64_t m = m_topkv->m_cartesian_tree.rmq(cur_mid + 1, cur_b);
-        m_q.push_back(queue_element_type(m_topkv->m_v[m], m, cur_mid + 1, cur_b));
+        m_q.push_back(queue_element_type{m_topkv->m_v[m], m, cur_mid + 1, cur_b});
         std::push_heap(m_q.begin(), m_q.end(), value_index_comparator());
       }
 
       return true;
     }
 
-    entry_type const &value() const { return m_cur; }
-
-    friend class topk_vector;
+    const entry_type &value() const { return m_cur; }
 
     void swap(enumerator &other) {
       using std::swap;
@@ -75,35 +71,36 @@ class topk_vector : boost::noncopyable {
     }
 
    private:
-    void set(topk_vector const *topkv, uint64_t a, uint64_t b) {
+    void set(const topk_vector *topkv, uint64_t a, uint64_t b) {
       assert(a <= b);
       clear();
       m_topkv = topkv;
 
       uint64_t m = m_topkv->m_cartesian_tree.rmq(a, b);
-      m_q.push_back(queue_element_type(m_topkv->m_v[m], m, a, b));
+      m_q.push_back(queue_element_type{m_topkv->m_v[m], m, a, b});
+      std::push_heap(m_q.begin(), m_q.end(), value_index_comparator());
     }
 
-    typedef boost::tuple<value_type, uint64_t, uint64_t, uint64_t> queue_element_type;
+    using queue_element_type = std::tuple<value_type, uint64_t, uint64_t, uint64_t>;
 
     struct value_index_comparator {
-      template <typename Tuple>
-      bool operator()(Tuple const &a, Tuple const &b) const {
-        using boost::get;
-        // lexicographic, increasing on value and decreasing
-        // on index
-        return (get<0>(a) < get<0>(b) || (get<0>(a) == get<0>(b) && get<1>(a) > get<1>(b)));
+      bool operator()(const queue_element_type &a, const queue_element_type &b) const {
+        // lexicographic: increasing value, decreasing index
+        auto [val_a, idx_a, _, __]     = a;
+        auto [val_b, idx_b, ___, ____] = b;
+        return (val_a < val_b) || (val_a == val_b && idx_a > idx_b);
       }
     };
 
    public:
     void clear() {
-      m_topkv = 0;
+      m_topkv = nullptr;
       m_q.clear();
     }
 
    private:
-    topk_vector const *m_topkv;
+    friend class topk_vector;
+    const topk_vector *m_topkv;
     std::vector<queue_element_type> m_q;
     entry_type m_cur;
   };
@@ -119,19 +116,17 @@ class topk_vector : boost::noncopyable {
   }
 
   entry_vector_type topk(uint64_t a, uint64_t b, size_t k) const {
-    entry_vector_type ret(std::min(size_t(b - a + 1), k));
+    entry_vector_type ret(std::min<size_t>(b - a + 1, k));
     enumerator it = get_topk_enumerator(a, b);
 
-    bool hasnext;
     for (size_t i = 0; i < ret.size(); ++i) {
-      hasnext = it.next();
-      assert(hasnext);
-      (void)hasnext;
+      bool has_next = it.next();
+      assert(has_next);
+      (void)has_next;
       ret[i] = it.value();
     }
 
     assert(ret.size() == k || !it.next());
-
     return ret;
   }
 
